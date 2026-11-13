@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+sqlalchemy
+httpx
+python-multipart
+python-dotenv
+groq
+apscheduler
+pytest
