@@ -1,9 +1,6 @@
-# secrets
 .env
 .env.local
 *.key
-
-# python
 __pycache__/
 *.pyc
 .venv/
@@ -11,16 +8,11 @@ venv/
 .pytest_cache/
 *.db
 *.sqlite3
-
-# node
 node_modules/
 .next/
 out/
-
-# os / editor
 .DS_Store
 .idea/
 .vscode/
-
-# eval outputs
 eval/results/
+.docs/
