@@ -16,7 +16,7 @@ export default function ApprovalsPage() {
 
   const [undoItem, setUndoItem] = useState<{ id: string; approved: boolean } | null>(null);
 
-  const handleDecide = async (id: string, approve: boolean) => {
+  const handleDecide = useCallback(async (id: string, approve: boolean) => {
     // Optimistic update
     const previous = approvals;
     mutate(approvals.filter(a => a.id !== id), false);
@@ -29,7 +29,7 @@ export default function ApprovalsPage() {
     } catch {
       mutate(previous, false);
     }
-  };
+  }, [approvals, mutate]);
 
   // Keyboard shortcuts [A] for Approve, [R] for Reject on the first item
   useEffect(() => {
@@ -53,7 +53,7 @@ export default function ApprovalsPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [approvals]);
+  }, [approvals, handleDecide]);
 
   return (
     <div className="space-y-6">

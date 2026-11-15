@@ -92,6 +92,15 @@ export default function MerchantPage() {
     };
   }, []);
 
+  const loadProfile = useCallback(async () => {
+    try {
+      const data = await getMyProfile();
+      setMerchant(data);
+    } catch {
+      router.push('/login');
+    }
+  }, [router]);
+
   // Check auth session & URL demo parameter
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -113,16 +122,7 @@ export default function MerchantPage() {
       // Load authenticated merchant profile
       loadProfile();
     }
-  }, [router]);
-
-  const loadProfile = async () => {
-    try {
-      const data = await getMyProfile();
-      setMerchant(data);
-    } catch {
-      router.push('/login');
-    }
-  };
+  }, [router, loadProfile]);
 
   const handleLangChange = (l: Language) => {
     setLang(l);
