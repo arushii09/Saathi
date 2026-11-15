@@ -4,7 +4,7 @@
 
 > **The AI thinks, plain code decides.**
 
-**Demo video -** https://img.shields.io/badge/Watch-3%20min%20demo-red?logo=youtube)](https://youtu.be/b2Up6MGa3Dg
+**Demo video -** https://youtu.be/b2Up6MGa3Dg
 
 
 Built for the Paytm Hackathon (Pune), Track 3: Autonomous AI Teammates.
