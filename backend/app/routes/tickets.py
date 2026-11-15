@@ -1,15 +1,21 @@
+import uuid
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import get_db
-from app.models import Ticket
+from app.db import get_db, utcnow
+from app.models import Ticket, Merchant
 from app import audit
-from app.helpers import record_confirmation
+from app.helpers import record_confirmation, detect_yes_no
 
 router = APIRouter()
+
+
+class TextRequest(BaseModel):
+    merchant_id: str
+    text: str
 
 
 class ConfirmRequest(BaseModel):
@@ -103,4 +109,94 @@ def confirm_ticket(
         "confirmation": record_res,
         "agent_result": agent_result,
     }
+
+
+@router.post("/text")
+def process_text_input(
+    req: TextRequest,
+    db: Session = Depends(get_db),
+):
+    merchant_id = req.merchant_id.strip() if req.merchant_id else ""
+    text = req.text.strip() if req.text else ""
+
+    if not merchant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "BAD_REQUEST", "message": "merchant_id is required."},
+        )
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "BAD_REQUEST", "message": "text cannot be empty."},
+        )
+
+    merchant = db.scalars(select(Merchant).where(Merchant.id == merchant_id)).first()
+    if not merchant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "MERCHANT_NOT_FOUND", "message": f"Merchant '{merchant_id}' not found."},
+        )
+
+    # Conversational check: if merchant has an active awaiting_merchant ticket and replies yes/no
+    pending_ticket = (
+        db.scalars(
+            select(Ticket)
+            .where(Ticket.merchant_id == merchant.id, Ticket.status == "awaiting_merchant")
+            .order_by(Ticket.created_at.desc())
+        ).first()
+    )
+    detected_ans = detect_yes_no(text)
+    if pending_ticket and detected_ans:
+        record_confirmation(ticket_id=pending_ticket.id, answer=detected_ans, db=db)
+        from app.agent import resume
+        resume(ticket_id=pending_ticket.id, answer=detected_ans, db=db)
+        db.refresh(pending_ticket)
+        return {
+            "ticket_id": pending_ticket.id,
+            "transcript": text,
+            "language": pending_ticket.language,
+            "confidence": 1.0,
+            "reply_text": pending_ticket.reply_text,
+            "reply_audio_url": None,
+            "tier": pending_ticket.tier or "tier 2A",
+            "status": pending_ticket.status,
+        }
+
+    ticket_id = f"T-{uuid.uuid4().hex[:8].upper()}"
+    ticket = Ticket(
+        id=ticket_id,
+        merchant_id=merchant.id,
+        source="text",
+        status="open",
+        transcript=text,
+        language=merchant.language or "hi",
+        stt_confidence=1.0,
+        created_at=utcnow(),
+    )
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+
+    audit.log(
+        ticket_id=ticket.id,
+        type="input",
+        payload={"source": "text", "text": text, "merchant_id": merchant.id},
+        db=db,
+    )
+
+    from app.agent import run_agent
+    run_agent(ticket_id=ticket.id, db=db)
+    db.refresh(ticket)
+
+    return {
+        "ticket_id": ticket.id,
+        "transcript": ticket.transcript,
+        "language": ticket.language,
+        "confidence": ticket.stt_confidence,
+        "reply_text": ticket.reply_text,
+        "reply_audio_url": None,
+        "tier": ticket.tier or "tier 1",
+        "status": ticket.status,
+    }
+
 
