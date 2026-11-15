@@ -1,11 +1,9 @@
 fastapi
 uvicorn[standard]
+sqlalchemy>=2.0
 pydantic
-pydantic-settings
-sqlalchemy
+python-dotenv
 httpx
 python-multipart
-python-dotenv
-groq
 apscheduler
 pytest
