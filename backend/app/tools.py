@@ -98,11 +98,15 @@ def create_technician_ticket(
 
 
 def escalate_to_human(
-    ticket_id: str, summary: str, db: Optional[Session] = None
+    ticket_id: str,
+    summary: str,
+    rule: Optional[str] = None,
+    recommended_next_step: Optional[str] = None,
+    db: Optional[Session] = None,
 ) -> dict[str, Any]:
     """
-    Sets ticket status to 'escalated', tier to 'tier 3', and logs an escalation audit event.
-    Case file details are attached later by handoff.py.
+    Sets ticket status to 'escalated', tier to 'tier 3', builds the 7-field case file,
+    and logs an escalation audit event containing the case file payload.
     """
     close_on_finish = False
     if db is None:
@@ -120,10 +124,18 @@ def escalate_to_human(
         db.commit()
         db.refresh(ticket)
 
+        from app.handoff import build_case_file
+        case_file = build_case_file(
+            ticket_id=ticket_id,
+            escalation_reason={"rule": rule or "R0", "reason": summary} if rule else summary,
+            recommended_next_step=recommended_next_step,
+            db=db,
+        )
+
         audit.log(
             ticket_id=ticket_id,
             type="escalation",
-            payload={"summary": summary},
+            payload={"summary": summary, "case_file": case_file},
             db=db,
         )
 
@@ -134,6 +146,7 @@ def escalate_to_human(
                 "status": ticket.status,
                 "tier": ticket.tier,
                 "summary": summary,
+                "case_file": case_file,
             },
             "error": None,
         }

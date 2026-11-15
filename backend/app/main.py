@@ -8,6 +8,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.db import init_db
 from app.mock.router import router as mock_router
+from app.routes.tickets import router as tickets_router
+from app.routes.approvals import router as approvals_router
+from app.routes.escalations import router as escalations_router
+from app.routes.admin import router as admin_router
 
 
 @asynccontextmanager
@@ -85,4 +89,8 @@ def health():
 
 
 app.include_router(mock_router, prefix="/mock", tags=["mock"])
+app.include_router(tickets_router, tags=["tickets"])
+app.include_router(approvals_router, tags=["approvals"])
+app.include_router(escalations_router, tags=["escalations"])
+app.include_router(admin_router, tags=["admin"])
 
