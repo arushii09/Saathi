@@ -48,7 +48,7 @@ def approve_request(approval_id: str, db: Session = Depends(get_db)):
             detail={"code": "APPROVAL_NOT_FOUND", "message": f"Approval '{approval_id}' not found."},
         )
 
-    # Idempotent: if already approved, return current state
+    # 1. Keep idempotency first: if already decided, return existing result immediately
     if approval.status == "approved":
         ticket = db.scalars(select(Ticket).where(Ticket.id == approval.ticket_id)).first()
         return {
@@ -58,27 +58,81 @@ def approve_request(approval_id: str, db: Session = Depends(get_db)):
             "ticket_status": ticket.status if ticket else "resolved",
             "idempotent": True,
         }
+    if approval.status == "rejected":
+        ticket = db.scalars(select(Ticket).where(Ticket.id == approval.ticket_id)).first()
+        return {
+            "id": approval.id,
+            "ticket_id": approval.ticket_id,
+            "status": "rejected",
+            "reason": approval.decision_reason,
+            "ticket_status": ticket.status if ticket else "escalated",
+            "idempotent": True,
+        }
 
-    # 1. Update approval status
+    # 2. Strict validation of approval arguments (no defaults)
+    args = approval.args
+
+    if not isinstance(args, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "INVALID_APPROVAL_ARGS",
+                "message": "Approval arguments are missing or invalid.",
+            },
+        )
+
+    device_id = args.get("device_id")
+    diagnosis = args.get("diagnosis")
+
+    if (
+        not isinstance(device_id, str)
+        or not device_id.strip()
+        or not isinstance(diagnosis, str)
+        or not diagnosis.strip()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "INVALID_APPROVAL_ARGS",
+                "message": "A valid device_id and diagnosis are required.",
+            },
+        )
+
+    # 3. Create mock technician ticket via tool
+    tool_result = tools.create_technician_ticket(
+        device_id=device_id.strip(),
+        diagnosis=diagnosis.strip(),
+        db=db,
+    )
+
+    # 4. Handle failure: leave approval pending and ticket in pending_approval, write tool_result audit log
+    if not tool_result.get("ok"):
+        audit.log(
+            ticket_id=approval.ticket_id,
+            type="tool_result",
+            payload={"tool": "create_technician_ticket", "result": tool_result, "status": "failed"},
+            db=db,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "TECHNICIAN_TICKET_CREATION_FAILED",
+                "message": tool_result.get("error") or "Technician ticket creation failed.",
+            },
+        )
+
+    # 5. On success: update approval status to approved
     approval.status = "approved"
     approval.decided_at = utcnow()
     db.commit()
 
-    # 2. Write approval_decided audit log
+    # 6. Write approval_decided and tool_result audit logs
     audit.log(
         ticket_id=approval.ticket_id,
         type="approval_decided",
         payload={"decision": "approved", "approval_id": approval.id},
         db=db,
     )
-
-    # 3. Create mock technician ticket via tool
-    args = approval.args or {}
-    device_id = args.get("device_id", "SB-1003")
-    diagnosis = args.get("diagnosis", "Approved field technician dispatch")
-    tool_result = tools.create_technician_ticket(device_id=device_id, diagnosis=diagnosis, db=db)
-
-    # 4. Write tool_result audit log
     audit.log(
         ticket_id=approval.ticket_id,
         type="tool_result",
@@ -86,7 +140,7 @@ def approve_request(approval_id: str, db: Session = Depends(get_db)):
         db=db,
     )
 
-    # 5. Set ticket resolved
+    # 7. Only mark ticket resolved after successful creation and logging
     ticket = db.scalars(select(Ticket).where(Ticket.id == approval.ticket_id)).first()
     if ticket:
         ticket.status = "resolved"

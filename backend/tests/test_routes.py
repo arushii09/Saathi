@@ -168,7 +168,7 @@ def test_ticket_confirm_lifecycle_and_idempotency(db):
     assert len(actions2) == 1  # Not duplicated!
 
 
-# 4. Approvals: list pending, approve, reject, idempotent
+# 4. Approvals: list pending, approve, reject, idempotent, and error handling
 def test_approvals_lifecycle_and_idempotency(db):
     ticket = Ticket(
         id="T-APP-TEST",
@@ -193,7 +193,7 @@ def test_approvals_lifecycle_and_idempotency(db):
     pending = list_pending_approvals(db=db)
     assert any(a["id"] == "APP-101" for a in pending)
 
-    # Approve
+    # 5. Successful approval
     res_appr = approve_request("APP-101", db=db)
     assert res_appr["status"] == "approved"
     assert res_appr["ticket_status"] == "resolved"
@@ -205,7 +205,7 @@ def test_approvals_lifecycle_and_idempotency(db):
     assert ticket.status == "resolved"
     assert ticket.resolved_at is not None
 
-    # Idempotent re-approve
+    # 6. Repeated approval (idempotency)
     res_appr2 = approve_request("APP-101", db=db)
     assert res_appr2["status"] == "approved"
     assert res_appr2["idempotent"] is True
@@ -234,6 +234,145 @@ def test_approvals_lifecycle_and_idempotency(db):
     res_rej2 = reject_request("APP-REJ-1", RejectRequest(), db=db)
     assert res_rej2["status"] == "rejected"
     assert res_rej2["idempotent"] is True
+
+
+def test_approval_missing_args(db):
+    ticket = Ticket(
+        id="T-APP-ERR-1",
+        merchant_id="m3",
+        source="text",
+        status="pending_approval",
+        language="hi",
+    )
+    db.add(ticket)
+
+    # 1. Missing approval arguments (args is None)
+    appr_no_args = Approval(
+        id="APP-NO-ARGS",
+        ticket_id="T-APP-ERR-1",
+        tool_name="create_technician_ticket",
+        args=None,
+        status="pending",
+    )
+    db.add(appr_no_args)
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        approve_request("APP-NO-ARGS", db=db)
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["code"] == "INVALID_APPROVAL_ARGS"
+    assert "missing or invalid" in exc_info.value.detail["message"].lower()
+
+
+def test_approval_missing_device_id(db):
+    ticket = Ticket(
+        id="T-APP-ERR-2",
+        merchant_id="m3",
+        source="text",
+        status="pending_approval",
+        language="hi",
+    )
+    db.add(ticket)
+
+    # 2. Missing device ID
+    appr_no_dev = Approval(
+        id="APP-NO-DEV",
+        ticket_id="T-APP-ERR-2",
+        tool_name="create_technician_ticket",
+        args={"diagnosis": "Speaker faulty"},  # missing device_id
+        status="pending",
+    )
+    db.add(appr_no_dev)
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        approve_request("APP-NO-DEV", db=db)
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["code"] == "INVALID_APPROVAL_ARGS"
+    assert "device_id and diagnosis" in exc_info.value.detail["message"]
+
+
+def test_approval_missing_diagnosis(db):
+    ticket = Ticket(
+        id="T-APP-ERR-3",
+        merchant_id="m3",
+        source="text",
+        status="pending_approval",
+        language="hi",
+    )
+    db.add(ticket)
+
+    # 3. Missing diagnosis (empty string)
+    appr_no_diag = Approval(
+        id="APP-NO-DIAG",
+        ticket_id="T-APP-ERR-3",
+        tool_name="create_technician_ticket",
+        args={"device_id": "SB-1003", "diagnosis": "   "},
+        status="pending",
+    )
+    db.add(appr_no_diag)
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        approve_request("APP-NO-DIAG", db=db)
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["code"] == "INVALID_APPROVAL_ARGS"
+
+
+def test_approval_technician_ticket_creation_failure(db, monkeypatch):
+    ticket = Ticket(
+        id="T-APP-FAIL",
+        merchant_id="m3",
+        source="voice",
+        status="pending_approval",
+        language="hi",
+    )
+    db.add(ticket)
+
+    appr = Approval(
+        id="APP-FAIL-1",
+        ticket_id="T-APP-FAIL",
+        tool_name="create_technician_ticket",
+        args={"device_id": "SB-1003", "diagnosis": "Speaker replacement required"},
+        status="pending",
+    )
+    db.add(appr)
+    db.commit()
+
+    # 4. Mock technician ticket creation failure
+    from app import tools
+
+    def mock_failed_technician_ticket(device_id, diagnosis, db=None):
+        return {
+            "ok": False,
+            "data": None,
+            "error": "Downstream technician dispatch API unavailable (503)",
+        }
+
+    monkeypatch.setattr(tools, "create_technician_ticket", mock_failed_technician_ticket)
+
+    with pytest.raises(HTTPException) as exc_info:
+        approve_request("APP-FAIL-1", db=db)
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.detail["code"] == "TECHNICIAN_TICKET_CREATION_FAILED"
+    assert "unavailable" in exc_info.value.detail["message"]
+
+    # Verify: approval stays pending
+    db.refresh(appr)
+    assert appr.status == "pending"
+
+    # Verify: ticket stays in pending_approval
+    db.refresh(ticket)
+    assert ticket.status == "pending_approval"
+    assert ticket.resolved_at is None
+
+    # Verify: tool_result audit log written with failure status
+    from app import audit
+    trace = audit.get_trace("T-APP-FAIL", db=db)
+    fail_event = next((e for e in trace if e["type"] == "tool_result"), None)
+    assert fail_event is not None
+    assert fail_event["payload"]["status"] == "failed"
 
 
 # 5. Escalations list and case file completeness
@@ -367,4 +506,27 @@ def test_escalate_and_notify_helper(db):
     assert ticket.status == "escalated"
     assert ticket.tier == "tier 3"
     assert ticket.reply_text is not None
+
+
+# 10. Shared error shape validation {error: {code, message}}
+def test_shared_error_shape_for_http_exceptions():
+    import json
+    from starlette.requests import Request
+    from app.main import http_exception_handler
+
+    exc = HTTPException(
+        status_code=400,
+        detail={"code": "INVALID_APPROVAL_ARGS", "message": "A valid device_id and diagnosis are required."},
+    )
+    scope = {"type": "http", "method": "POST", "path": "/approvals/APP-1/approve", "headers": []}
+    req = Request(scope)
+    res = http_exception_handler(req, exc)
+    body = json.loads(res.body.decode())
+    assert res.status_code == 400
+    assert "error" in body
+    assert body["error"] == {
+        "code": "INVALID_APPROVAL_ARGS",
+        "message": "A valid device_id and diagnosis are required.",
+    }
+
 

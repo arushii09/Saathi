@@ -1,7 +1,7 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status
-from fastapi.exceptions import RequestValidationError
+from fastapi import FastAPI, Request, status, HTTPException
+from fastapi.exceptions import RequestValidationError, HTTPException as FastAPIHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -39,21 +39,23 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(FastAPIHTTPException)
 @app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    if isinstance(exc.detail, dict) and "code" in exc.detail and "message" in exc.detail:
-        code = exc.detail["code"]
-        message = exc.detail["message"]
+def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    code_map = {
+        400: "BAD_REQUEST",
+        401: "UNAUTHORIZED",
+        403: "FORBIDDEN",
+        404: "NOT_FOUND",
+        409: "CONFLICT",
+        422: "VALIDATION_ERROR",
+        500: "INTERNAL_SERVER_ERROR",
+        502: "BAD_GATEWAY",
+    }
+    if isinstance(exc.detail, dict):
+        code = exc.detail.get("code") or code_map.get(exc.status_code, "HTTP_ERROR")
+        message = exc.detail.get("message") or str(exc.detail)
     else:
-        code_map = {
-            400: "BAD_REQUEST",
-            401: "UNAUTHORIZED",
-            403: "FORBIDDEN",
-            404: "NOT_FOUND",
-            409: "CONFLICT",
-            422: "VALIDATION_ERROR",
-            500: "INTERNAL_SERVER_ERROR",
-        }
         code = code_map.get(exc.status_code, "HTTP_ERROR")
         message = str(exc.detail)
 
@@ -64,7 +66,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
     msg = "; ".join(
         [f"{'.'.join(str(loc) for loc in err.get('loc', []))}: {err.get('msg', '')}" for err in errors]
@@ -76,7 +78,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 @app.exception_handler(Exception)
-async def generic_exception_handler(request: Request, exc: Exception):
+def generic_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"error": {"code": "INTERNAL_SERVER_ERROR", "message": str(exc)}},
