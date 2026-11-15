@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Paytm Brand Tokens: Signature Deep Navy + Paytm Cyan Blue */
+  --navy-900: #002E6E;
+  --navy-800: #0B2545;
+  --navy-700: #123A6B;
+  --brand-500: #00BAF2;
+  --brand-600: #0090C8;
+  --teal-500: #00D3C7;
+  --surface: #F5F9FD;
+  --card: #FFFFFF;
+  --border: #E2ECF6;
+  --text: #001A44;
+  --muted: #5A6E85;
+  --online: #00B368;
+  --offline: #EE272C;
+
+  /* Tier colors */
+  --tier-t1-bg: #EAF8EE;
+  --tier-t1-border: #00B368;
+  --tier-t1-text: #00663B;
+
+  --tier-t2a-bg: #EBF7FF;
+  --tier-t2a-border: #00BAF2;
+  --tier-t2a-text: #005A8C;
+
+  --tier-t2b-bg: #FFF7EB;
+  --tier-t2b-border: #E68A00;
+  --tier-t2b-text: #8C4F00;
+
+  --tier-t3-bg: #FEECEE;
+  --tier-t3-border: #EE272C;
+  --tier-t3-text: #9E0F12;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background-color: var(--surface);
+  color: var(--text);
+  font-family: 'Inter', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+:lang(hi) {
+  font-family: 'Noto Sans Devanagari', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 1.6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Montserrat', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: -0.015em;
+  font-weight: 700;
+}
+
+/* Accessible focus outline */
+:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 2px;
+}
+
+/* Paytm Gradient Header / Accents */
+.paytm-gradient {
+  background: linear-gradient(135deg, #002E6E 0%, #004B99 60%, #00BAF2 100%);
+}
+
+.paytm-gradient-subtle {
+  background: linear-gradient(180deg, #FFFFFF 0%, #F5F9FD 100%);
+}
+
+.paytm-blue-gradient {
+  background: linear-gradient(135deg, #00BAF2 0%, #0082C8 100%);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBDCEB;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
