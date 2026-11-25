@@ -4,7 +4,6 @@
 
 > **The AI thinks, plain code decides.**
 
-**Demo video -** https://youtu.be/b2Up6MGa3Dg
 
 
 Built for the Paytm Hackathon (Pune), Track 3: Autonomous AI Teammates.
