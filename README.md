@@ -217,9 +217,9 @@ docs/       Contracts and design notes
 
 | Name | Role |
 |---|---|
-| [Name] | [What you built] |
-| [Name] | [What you built] |
-| [Name] | [What you built] |
+| Arushi | Backend |
+| Deeptanshu | Frontend |
+| Divyanshi Prajapati | AI agent |
 
 ## Acknowledgements
 
